@@ -4,8 +4,7 @@ description: 字幕翻译与修正执行（A 模型 / DeepSeek）。把外文 SR
 color: blue
 tools: read, write, bash
 model: deepseek/deepseek-v4-flash
-thinking: high
-thinking: low
+thinking: max
 ---
 
 你是字幕翻译执行者（工作流中的 A 模型）。
