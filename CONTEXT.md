@@ -16,7 +16,10 @@
 - **未解决疑点 (unresolved finding)**：经过两轮修正循环后，校验模型仍无法给出可靠修正建议、或翻译模型无法干净执行的疑点；最终以 Markdown 形式交人工判断中文通顺度，人不判断原文准确性。
 - **软字幕 (soft subtitles)**：独立的字幕文件（如 .srt），与视频分离，可编辑、可开关。本流程的**规范产出格式是 SRT**。
 - **硬字幕 / 烧录 (burned-in / hardsubs)**：字幕像素化压进视频画面。本项目的终态目标，但属于**后期范围**；接入时预期路线为 SRT → ASS（样式控制，尤其中外双语排版）→ ffmpeg 烧录。
-- **目的地 (destination)**：当前 wayfinding 努力的终点——见 issue  tracker 中 `wayfinder:map` 标签的地图 issue。本期目的地只到"产出校对过的中文字幕 SRT"为止。
+- **说话人标签 (speaker label)**：多讲述者视频中标识"谁在说话"的占位符，规范形式为 A/B/C 自动编号；真名不由 AI 推断，由操作者在最终产物上自行填充。
+- **人设 (persona)**：操作者可选择提供的、每个说话人标签一句的人物描述（身份、口吻、正式度），注入翻译环节以维持口吻一致；默认不提供，由翻译模型按标签自保持一致。
+- **背景人声 (background speech)**：素材中需要剔除的非目标人声——典型为游戏录播中游戏角色/NPC 的语音，与要保留的真人实况语音可能在时间上重叠；区别于"带歌词的 BGM"（音乐场景）与多讲述者对话场景（所有人声都保留）。
+- **目的地 (destination)**：当前 wayfinding 努力的终点——见 issue tracker 中 `wayfinder:map` 标签的地图 issue。当前有效目的地见[地图 #7](https://github.com/CyclamenY/translanter/issues/7)（多讲述者与复杂音源视频）；[地图 #1](https://github.com/CyclamenY/translanter/issues/1)（"产出校对过的中文字幕 SRT"）已达成。
 
 ## 环境基线（执行机器）
 
