@@ -22,3 +22,9 @@ venv/
 # Workflow artifacts
 *.srt.bak
 *.srt.tmp
+
+# Local video files (test material, not committed)
+video/
+
+# Local pi agent config
+.pi/
