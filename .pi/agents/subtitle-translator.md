@@ -3,7 +3,7 @@ name: subtitle-translator
 description: 字幕翻译与修正执行（A 模型 / DeepSeek）。把外文 SRT 翻译成中文 SRT，或按审计疑点清单执行修正。长视频（>300 条）改用 llm-subtrans CLI。
 color: blue
 tools: read, write, bash
-model: deepseek/deepseek-chat
+model: deepseek/deepseek-v4-pro
 thinking: low
 ---
 

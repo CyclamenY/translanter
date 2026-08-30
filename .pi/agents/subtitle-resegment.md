@@ -3,8 +3,8 @@ name: subtitle-resegment
 description: 字幕断句重组。把 whisper 输出的碎句 SRT 按完整句子重新合并分段，只合不拆，时间轴取自原条目边界。翻译前调用。
 color: cyan
 tools: read, write
-model: deepseek/deepseek-chat
-thinking: low
+model: deepseek/deepseek-v4-pro
+thinking: max
 isolated: true
 ---
 
