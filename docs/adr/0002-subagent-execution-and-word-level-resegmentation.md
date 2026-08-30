@@ -11,7 +11,8 @@
 
 ## 后果
 
-- 三个 subagent 定义入库（`.pi/agents/`），随仓库分发；模型绑定 deepseek/deepseek-v4-pro 与 kimi-coding/k3-256。
+- 三个 subagent 定义入库（`.pi/agents/`），随仓库分发；模型绑定 deepseek/deepseek-v4-flash（thinking high）与 kimi-coding/k3-256。
+- 每个视频一个工作目录 `out/<视频名>/`，标准文件名固定（source/resegmented/translated/bilingual/findings/proofread 等），环节间按名交接。
 - 主会话承担程序校验职责：重组的文本守恒/词边界校验、翻译的条目数与时间轴 1:1 校验。不信任 agent 自报。
 - 转写必须开 `--word_timestamps True` 并输出 JSON（幻觉三件套因此完整保留）。
 - 长视频（>300 条）翻译分流到 LLM-Subtrans CLI，规则写在 translator agent 定义里。

@@ -31,6 +31,21 @@
 
 以上目录全部 gitignore，不入库。
 
+## 工作区约定
+
+**每个视频一个目录**：`out/<视频名>/`，文件名固定，全流程各环节按名读写：
+
+| 文件 | 产生环节 | 内容 |
+|---|---|---|
+| `source.srt` / `source.json` | 1 转写 | 原文字幕 / 词级时间戳（重组真源） |
+| `resegmented.srt` | 2 重组 | 整句化原文字幕 |
+| `translated.srt` | 3 翻译 | 初译中文字幕 |
+| `bilingual.srt` | 4 前置 | 双语合并（审计输入） |
+| `findings-round-1.json` | 4 审计 | 第一轮疑点清单 |
+| `proofread.srt` | 4 修正 | **最终产物** |
+| `bilingual-fixed.srt` / `spot-check-result.json` | 4 复核 | 第二轮输入 / 结果 |
+| `unresolved.md` | 5 | 人工抽查清单 |
+
 ## 步骤 1：转写
 
 ```sh
@@ -39,7 +54,7 @@ export PATH="$PWD/tools/cuda-libs:$PATH"   # 注意：bash 里必须用 /e/... �
 
 venv/Scripts/whisper-ctranslate2 <视频文件> \
   --model large-v3 --language <语种代码> \
-  --output_format all --pretty_json True --output_dir out \
+  --output_format all --pretty_json True --output_dir out/<视频名> \
   --device cuda --compute_type float16 \
   --vad_filter True --word_timestamps True \
   --condition_on_previous_text False --hallucination_silence_threshold 2
@@ -48,7 +63,7 @@ venv/Scripts/whisper-ctranslate2 <视频文件> \
 要点：
 
 - **语种已知时显式 `--language`**，不要依赖自动检测（只看开头 30 秒）。
-- `--output_format all` 同时产出 SRT 和**词级时间戳 JSON**——JSON 是步骤 2 的真源。
+- `--output_format all` 同时产出 SRT 和**词级时间戳 JSON**——JSON 是步骤 2 的真源。产出后把 `out/<视频名>/<视频名>.srt` 与 `.json` 重命名为 `source.srt` / `source.json`。
 - 幻觉三件套（VAD + `condition_on_previous_text False` + `hallucination_silence_threshold 2`）全开；最后一个依赖 `--word_timestamps True`（踩坑 #1）。
 - BGM 重的素材不要开 `--batched True`（会忽略幻觉参数）。
 
@@ -58,7 +73,7 @@ whisper 原生分段按音频块切条，不管句子边界（实测仅 11–24%
 
 ```
 Agent(subagent_type="subtitle-resegment",
-      prompt="SRT：out/<名>.srt；词级 JSON：out/<名>.json；输出：out/resegmented.srt")
+      prompt="工作区：out/<视频名>/。读取 source.srt 与 source.json，重组写入 resegmented.srt")
 ```
 
 - agent 规则：以词为最小单位既合又拆，时间轴一律取自词边界，文本一词不改，单条 ≤10 秒。
@@ -69,14 +84,14 @@ Agent(subagent_type="subtitle-resegment",
 
 ```
 Agent(subagent_type="subtitle-translator",
-      prompt="形态 1：读取 out/resegmented.srt，翻译成中文，写入 out/translated.srt。视频背景：…")
+      prompt="形态 1：工作区 out/<视频名>/，读取 resegmented.srt 翻译成中文写入 translated.srt。视频背景：…")
 ```
 
 - 给背景信息（题材、术语表）能显著提升专名一致性。
 - **长视频分流**：>300 条时 agent 自动改用 LLM-Subtrans CLI（分块 + 错位重试 + 断点续翻）：
   `cd tools/llm-subtrans && ../../venv/Scripts/python scripts/deepseek-subtrans.py -l Chinese --project --postprocess -o <输出> <输入>`
 - 主会话校验：条目数与时间轴和 resegmented.srt 逐条相等。
-- 合并双语 SRT（原文上、译文下，共享时间轴），供步骤 4。
+- 合并双语 SRT（原文上、译文下，共享时间轴）为 `bilingual.srt`，供步骤 4。
 
 ## 步骤 4：AI 校验（两轮封顶）
 

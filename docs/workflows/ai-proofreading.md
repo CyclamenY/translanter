@@ -57,14 +57,14 @@ Hello, world.
 
 ```
 Agent(subagent_type="subtitle-auditor",
-      prompt="任务形态：第一轮审计。遵循 docs/prompts/audit-prompt.md，审计 out/bilingual.srt，结果写入 out/findings-round-1.json")
+      prompt="任务形态：第一轮审计。遵循 docs/prompts/audit-prompt.md，审计 out/<视频名>/bilingual.srt，结果写入 out/<视频名>/findings-round-1.json")
 ```
 
 ### 步骤 3：执行修正（A 模型）
 
 ```
 Agent(subagent_type="subtitle-translator",
-      prompt="形态 2（执行修正）：读取 out/bilingual.srt 与 out/findings-round-1.json，产出 out/proofread.srt")
+      prompt="形态 2（执行修正）：读取 out/<视频名>/bilingual.srt 与 out/<视频名>/findings-round-1.json，产出 out/<视频名>/proofread.srt")
 ```
 
 主会话校验：条目数与时间轴不变、改动条目号与 findings 一致（术语类疑点允许的连带条目除外）。然后把 `proofread.srt` 与源字幕重新合并为 `bilingual-fixed.srt`。
@@ -73,7 +73,7 @@ Agent(subagent_type="subtitle-translator",
 
 ```
 Agent(subagent_type="subtitle-auditor",
-      prompt="任务形态：第二轮 spot-check。遵循 docs/prompts/spot-check-prompt.md，复核 out/bilingual-fixed.srt 中 findings-round-1.json 列出的条目，结果写入 out/spot-check-result.json")
+      prompt="任务形态：第二轮 spot-check。遵循 docs/prompts/spot-check-prompt.md，复核 out/<视频名>/bilingual-fixed.srt 中 findings-round-1.json 列出的条目，结果写入 out/<视频名>/spot-check-result.json")
 ```
 
 注意：spot-check 引用的译文可能与修正后文件不符（历史误报根因），未解决疑点须与产物文件核对后再交人工。
