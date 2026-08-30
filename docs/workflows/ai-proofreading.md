@@ -10,7 +10,11 @@
 ## 模型配置
 
 - **A（翻译模型 / 执行修正）**：DeepSeek V4 Pro
+  - 环境变量：`DEEPSEEK_API_KEY`（必须）、`DEEPSEEK_API_BASE`（可选，默认 `https://api.deepseek.com`）
 - **B（校验模型 / 独立审计）**：Kimi k3
+  - 环境变量：`KIMI_API_KEY`（必须）、`KIMI_API_BASE`（可选，默认 `https://api.moonshot.cn`）
+
+> **安全提醒**：API key 只通过环境变量注入，不写入仓库任何文件，也不提交到 git。
 
 ## 输入
 

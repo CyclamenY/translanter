@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+*.secret
+secrets/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.suo
+*.user
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Workflow artifacts
+*.srt.bak
+*.srt.tmp
