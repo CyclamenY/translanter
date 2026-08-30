@@ -1,5 +1,9 @@
 # translanter
 
+## 主工作流
+
+用户要求处理视频（转写/翻译/加字幕）时，走主工作流：权威文档 `docs/workflows/video-to-chinese-srt.md`，激活入口 `.pi/skills/process-video/`，LLM 环节用 `.pi/agents/` 下的 subtitle-resegment / subtitle-translator / subtitle-auditor 三个 subagent。
+
 ## Agent skills
 
 ### Issue tracker

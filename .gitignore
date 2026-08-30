@@ -26,9 +26,10 @@ venv/
 # Local video files (test material, not committed)
 video/
 
-# Local pi agent config (but commit .pi/agents/ definitions)
+# Local pi agent config (but commit .pi/agents/ and .pi/skills/ definitions)
 .pi/*
 !.pi/agents/
+!.pi/skills/
 
 # HuggingFace model cache (project-local, ~3GB)
 .cache/
