@@ -28,3 +28,12 @@ video/
 
 # Local pi agent config
 .pi/
+
+# HuggingFace model cache (project-local, ~3GB)
+.cache/
+
+# CUDA runtime DLLs for whisper GPU inference (~1.8GB)
+tools/cuda-libs/
+
+# Transcription/translation outputs
+out/
