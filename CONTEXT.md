@@ -7,13 +7,15 @@
 ## Glossary
 
 - **工作流 (the workflow)**：本仓库的核心交付物——一份文档化的、可重复执行的操作流程，输入本地视频文件，输出中文字幕。
-- **转写 (transcription)**：从视频音轨生成带时间轴的原文文本（外语视频 → 外文字幕；中文视频 → 中文字幕）。机器完成，标准化工具为 whisper-ctranslate2（faster-whisper 实现）+ large-v3，产出 SRT 与词级时间戳 JSON。
+- **转写 (transcription)**：从视频音轨生成带时间轴的原文文本（外语视频 → 外文字幕；中文视频 → 中文字幕）。机器完成，标准化工具为 stable-ts + faster-whisper（large-v3，静音抑制精炼词级时间戳），产出 SRT 与词级时间戳 JSON。
 - **断句重组 (resegmentation)**：把转写出的碎句字幕按完整句子重建分段。由 `subtitle-resegment` subagent 以词级时间戳 JSON 为真源执行（以词为最小单位可合可拆，时间轴取自词边界），主会话程序校验文本守恒与时间轴合法性。
 - **翻译 (translation)**：把外文字幕翻译成中文字幕。由 LLM API 完成（whisper 自带的翻译只能译成英文，不可用）。
 - **校验 (proofreading)**：翻译后的质量把关。由**校验模型**对照原文执行，主产物为**已修正中文字幕**与**疑点清单**；"对照原文的准确性"由 AI 负责，"中文是否通顺"仅由人抽查疑点清单，非必经。
 - **翻译模型 (translation model)**：负责把外文字幕翻译成中文字幕的 LLM，受校验模型监督执行修正。
 - **校验模型 (proofreading model)**：独立于翻译模型、负责审计译文质量的 LLM；其发现优先于翻译模型，操作者因可能不懂原文而无法复核其判断。
-- **未解决疑点 (unresolved finding)**：经过两轮修正循环后，校验模型仍无法给出可靠修正建议、或翻译模型无法干净执行的疑点；最终以 Markdown 形式交人工判断中文通顺度，人不判断原文准确性。
+- **ASR**（Automatic Speech Recognition，自动语音识别）：把音频转成文字的机器环节，本流程中即「转写」一步（stable-ts + faster-whisper）。它是整条流水线的错误源头之一——听错人名、同音字、网络用语时，下游翻译只能基于错误的原文猜测。
+- **ASR 级疑点 (ASR-level finding)**：审计中发现、但病根在转写而非翻译的疑点。特征：校验模型对照「原文」判断时，发现原文本身就语义不通（疑似听错），无法给出可靠修正建议，只能标 low confidence 交人工。此类疑点的正确处理方式是操作者**对照音频确认原句**，而非在译文上做文章。
+- **未解决疑点 (unresolved finding)**：经过两轮修正循环后，校验模型仍无法给出可靠修正建议、或翻译模型无法干净执行的疑点；最终以 Markdown 形式交人工判断中文通顺度，人不判断原文准确性。多数是 ASR 级疑点。
 - **软字幕 (soft subtitles)**：独立的字幕文件（如 .srt），与视频分离，可编辑、可开关。本流程的**规范产出格式是 SRT**。
 - **硬字幕 / 烧录 (burned-in / hardsubs)**：字幕像素化压进视频画面。本项目的终态目标，但属于**后期范围**；接入时预期路线为 SRT → ASS（样式控制，尤其中外双语排版）→ ffmpeg 烧录。
 - **说话人标签 (speaker label)**：多讲述者视频中标识"谁在说话"的占位符，规范形式为 A/B/C 自动编号；真名不由 AI 推断，由操作者在最终产物上自行填充。
@@ -25,7 +27,7 @@
 
 - Windows，RTX 3070 8GB（whisper large-v3 / fp16 可行）
 - ffmpeg 已安装；Python 3.10 已安装
-- 工具链已落地（全部在项目目录内、不入库）：`venv/`（whisper-ctranslate2 + llm-subtrans editable）、`tools/cuda-libs/`（CUDA 12 + cuDNN 9 DLL）、`tools/llm-subtrans/`、`.cache/huggingface/`（模型缓存）
+- 工具链已落地（全部在项目目录内、不入库）：`venv/`（stable-ts + faster-whisper + llm-subtrans editable）、`tools/cuda-libs/`（CUDA 12 + cuDNN 9 DLL）、`tools/transcribe_stable.py`（转写脚本，已入库）、`tools/llm-subtrans/`、`.cache/huggingface/`（模型缓存）
 - LLM 执行依赖 pi subagent：内置 provider `deepseek`（DEEPSEEK_API_KEY）与 `kimi-coding`（KIMI_API_KEY，Coding Plan key 可用）
 
 ## 范围约定
