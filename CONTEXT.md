@@ -7,7 +7,8 @@
 ## Glossary
 
 - **工作流 (the workflow)**：本仓库的核心交付物——一份文档化的、可重复执行的操作流程，输入本地视频文件，输出中文字幕。
-- **转写 (transcription)**：从视频音轨生成带时间轴的原文文本（外语视频 → 外文字幕；中文视频 → 中文字幕）。机器完成，候选工具为 whisper 系实现。
+- **转写 (transcription)**：从视频音轨生成带时间轴的原文文本（外语视频 → 外文字幕；中文视频 → 中文字幕）。机器完成，标准化工具为 whisper-ctranslate2（faster-whisper 实现）+ large-v3，产出 SRT 与词级时间戳 JSON。
+- **断句重组 (resegmentation)**：把转写出的碎句字幕按完整句子重建分段。由 `subtitle-resegment` subagent 以词级时间戳 JSON 为真源执行（以词为最小单位可合可拆，时间轴取自词边界），主会话程序校验文本守恒与时间轴合法性。
 - **翻译 (translation)**：把外文字幕翻译成中文字幕。由 LLM API 完成（whisper 自带的翻译只能译成英文，不可用）。
 - **校验 (proofreading)**：翻译后的质量把关。由**校验模型**对照原文执行，主产物为**已修正中文字幕**与**疑点清单**；"对照原文的准确性"由 AI 负责，"中文是否通顺"仅由人抽查疑点清单，非必经。
 - **翻译模型 (translation model)**：负责把外文字幕翻译成中文字幕的 LLM，受校验模型监督执行修正。
@@ -20,7 +21,9 @@
 ## 环境基线（执行机器）
 
 - Windows，RTX 3070 8GB（whisper large-v3 / fp16 可行）
-- ffmpeg 已安装；Python 3.10 已安装；whisper 未安装
+- ffmpeg 已安装；Python 3.10 已安装
+- 工具链已落地（全部在项目目录内、不入库）：`venv/`（whisper-ctranslate2 + llm-subtrans editable）、`tools/cuda-libs/`（CUDA 12 + cuDNN 9 DLL）、`tools/llm-subtrans/`、`.cache/huggingface/`（模型缓存）
+- LLM 执行依赖 pi subagent：内置 provider `deepseek`（DEEPSEEK_API_KEY）与 `kimi-coding`（KIMI_API_KEY，Coding Plan key 可用）
 
 ## 范围约定
 
