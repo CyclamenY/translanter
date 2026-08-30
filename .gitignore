@@ -35,5 +35,8 @@ video/
 # CUDA runtime DLLs for whisper GPU inference (~1.8GB)
 tools/cuda-libs/
 
+# LLM-Subtrans source checkout (installed editable into venv)
+tools/llm-subtrans/
+
 # Transcription/translation outputs
 out/
