@@ -35,6 +35,8 @@ BASE = "https://ws-nefv2l1h6gqljivb.cn-beijing.maas.aliyuncs.com"
 SUBMIT_URL = f"{BASE}/api/v1/services/audio/asr/transcription"
 CLOUDFLARED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
 MAX_ENTRY_SECONDS = 12.0  # 超过此长度的句子用词级时间戳机械拆分
+MIN_SILENCE_SECONDS = 2.0  # 持续这么久的低振幅区段可作优先切分点
+SILENCE_DBFS = -40.0       # 低于此 RMS 电平视为静音
 POLL_INTERVAL = 5
 POLL_MAX = 480  # 40 分钟封顶（实测 3h 音频约 6.5 分钟）
 
@@ -129,6 +131,36 @@ def transcribe(file_url: str) -> dict:
 
 # ---------- 转换与拆分 ----------
 
+def compute_silences(audio_path: str) -> list:
+    """解码音频算 100ms 粒度 RMS 包络，返回持续 >= MIN_SILENCE_SECONDS 且电平低于 SILENCE_DBFS 的静音段 [(start_s, end_s)]。"""
+    import numpy as np
+
+    pcm = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", audio_path, "-f", "f32le", "-acodec", "pcm_f32le", "-"],
+        capture_output=True, check=True,
+    ).stdout
+    samples = np.frombuffer(pcm, dtype=np.float32)
+    if len(samples) == 0:
+        return []
+    win = 1600  # 100ms @16k
+    n = len(samples) // win
+    rms = np.sqrt(np.mean(samples[: n * win].reshape(n, win) ** 2, axis=1))
+    floor = 10 ** (SILENCE_DBFS / 20)
+    silent = rms < floor
+
+    silences, start = [], None
+    for i, s in enumerate(silent):
+        if s and start is None:
+            start = i
+        elif not s and start is not None:
+            if (i - start) * 0.1 >= MIN_SILENCE_SECONDS:
+                silences.append((start * 0.1, i * 0.1))
+            start = None
+    if start is not None and (n - start) * 0.1 >= MIN_SILENCE_SECONDS:
+        silences.append((start * 0.1, n * 0.1))
+    return silences
+
+
 def normalize(text: str) -> str:
     return re.sub(r"[\s，。、！？,.!?…・「」『』\"''()（）—\-]+", "", text).lower()
 
@@ -149,8 +181,12 @@ def join_words(chunk: list) -> str:
     return out
 
 
-def split_long_sentence(sent: dict) -> list:
-    """把 >12s 的句子按词边界机械拆分，优先在最大停顿处下刀。返回句子列表（结构与输入一致）。"""
+def split_long_sentence(sent: dict, silences: list) -> list:
+    """把 >12s 的句子按词边界机械拆分。
+
+    切点优先级：窗口内最后一个 >=2s 静音段（振幅验证过的真实空白）里的词边界 >
+    窗口内最大词间停顿。返回句子列表（结构与输入一致）。
+    """
     words = sent.get("words", [])
     if not words:
         return [sent]
@@ -161,12 +197,26 @@ def split_long_sentence(sent: dict) -> list:
         print(f"  警告: 句 {sent.get('sentence_id')} 词流与句文本不一致，保留 {round((sent['end_time']-sent['begin_time'])/1000,1)}s 长条")
         return [sent]
 
+    def pick_cut(cur: list) -> int:
+        """在 cur 里选切点（返回后半段的起始下标）。"""
+        win_start, win_end = cur[0]["begin_time"] / 1000, cur[-1]["end_time"] / 1000
+        # 与窗口有交集的静音段，取最靠后的
+        hits = [(s, e) for s, e in silences if e > win_start and s < win_end]
+        if hits:
+            s, e = hits[-1]
+            # 切在静音段起点之前的最后一个词之后（词不落进静音区）
+            for i in range(len(cur) - 1, -1, -1):
+                if cur[i]["end_time"] / 1000 <= s:
+                    if i + 1 < len(cur):
+                        return i + 1
+                    break
+        gaps = [cur[i + 1]["begin_time"] - cur[i]["end_time"] for i in range(len(cur) - 1)]
+        return gaps.index(max(gaps)) + 1 if gaps else len(cur)
+
     chunks, cur = [], [words[0]]
     for w in words[1:]:
         if (w["end_time"] - cur[0]["begin_time"]) / 1000 > MAX_ENTRY_SECONDS:
-            # 在 cur 内找最大词间停顿处切开
-            gaps = [cur[i + 1]["begin_time"] - cur[i]["end_time"] for i in range(len(cur) - 1)]
-            cut = gaps.index(max(gaps)) + 1 if gaps else len(cur)
+            cut = pick_cut(cur)
             if cut == len(cur):  # 无更好切点，就在边界切
                 chunks.append(cur)
                 cur = [w]
@@ -188,7 +238,7 @@ def split_long_sentence(sent: dict) -> list:
     return out
 
 
-def to_segments(result: dict) -> tuple:
+def to_segments(result: dict, silences: list) -> tuple:
     """qwen 响应 → whisper-ctranslate2 pretty_json 兼容 segments（秒）。"""
     sentences = []
     for tr in result.get("transcripts", []):
@@ -199,7 +249,7 @@ def to_segments(result: dict) -> tuple:
     for s in sentences:
         if (s["end_time"] - s["begin_time"]) / 1000 > MAX_ENTRY_SECONDS:
             n_long += 1
-            split_sents.extend(split_long_sentence(s))
+            split_sents.extend(split_long_sentence(s, silences))
         else:
             split_sents.append(s)
     if n_long:
@@ -276,6 +326,10 @@ def main() -> None:
 
         result = transcribe(file_url)
 
+        print("计算静音段（拆分切点用）…")
+        silences = compute_silences(audio_path)
+        print(f"检测到 >=2s 静音段 {len(silences)} 处")
+
         raw_path = os.path.join(args.output_dir, "qwen_raw.json")
         with open(raw_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
@@ -285,7 +339,7 @@ def main() -> None:
         if server:
             server.shutdown()
 
-    segments, full_text = to_segments(result)
+    segments, full_text = to_segments(result, silences)
 
     srt_path = os.path.join(args.output_dir, "source.srt")
     json_path = os.path.join(args.output_dir, "source.json")
@@ -302,6 +356,8 @@ def main() -> None:
         keep = os.path.join(args.output_dir, "audio.mp3")
         os.replace(audio_path, keep)
         print(f"  {keep}")
+    import shutil
+    shutil.rmtree(tmpdir, ignore_errors=True)
 
     n_words = sum(len(s["words"]) for s in segments)
     print(f"OK: {len(segments)} segments, {n_words} words, 耗时 {time.time() - t0:.1f}s")
