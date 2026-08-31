@@ -35,7 +35,7 @@ BASE = "https://ws-nefv2l1h6gqljivb.cn-beijing.maas.aliyuncs.com"
 SUBMIT_URL = f"{BASE}/api/v1/services/audio/asr/transcription"
 CLOUDFLARED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
 MAX_ENTRY_SECONDS = 12.0  # 超过此长度的句子用词级时间戳机械拆分
-MIN_SILENCE_SECONDS = 2.0  # 持续这么久的低振幅区段可作优先切分点
+MIN_SILENCE_SECONDS = 1.0  # 持续这么久的低振幅区段可作优先切分点
 SILENCE_DBFS = -40.0       # 低于此 RMS 电平视为静音
 POLL_INTERVAL = 5
 POLL_MAX = 480  # 40 分钟封顶（实测 3h 音频约 6.5 分钟）
@@ -328,7 +328,7 @@ def main() -> None:
 
         print("计算静音段（拆分切点用）…")
         silences = compute_silences(audio_path)
-        print(f"检测到 >=2s 静音段 {len(silences)} 处")
+        print(f"检测到 >={MIN_SILENCE_SECONDS:g}s 静音段 {len(silences)} 处")
 
         raw_path = os.path.join(args.output_dir, "qwen_raw.json")
         with open(raw_path, "w", encoding="utf-8") as f:
