@@ -7,6 +7,10 @@
   set DASHSCOPE_API_KEY=...  （或 User 级环境变量）
   venv/Scripts/python tools/transcribe_qwen.py <视频/音频文件> --output-dir out/<视频名>
 
+离线重拆（调拆分参数时用，不调 API、不花钱）:
+  venv/Scripts/python tools/transcribe_qwen.py <视频文件> --output-dir out/<视频名> \
+    --from-raw out/<视频名>/qwen_raw.json
+
 产物（与 transcribe_stable.py 相同的工作区约定）：
   <output-dir>/source.srt    整句化原文字幕（>12s 条目已用词级时间戳机械拆分）
   <output-dir>/source.json   词级时间戳（whisper-ctranslate2 --pretty_json 兼容结构）
@@ -35,7 +39,7 @@ BASE = "https://ws-nefv2l1h6gqljivb.cn-beijing.maas.aliyuncs.com"
 SUBMIT_URL = f"{BASE}/api/v1/services/audio/asr/transcription"
 CLOUDFLARED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
 MAX_ENTRY_SECONDS = 12.0  # 超过此长度的句子用词级时间戳机械拆分
-MIN_SILENCE_SECONDS = 1.0  # 持续这么久的低振幅区段可作优先切分点
+MIN_SILENCE_SECONDS = 0.8  # 持续这么久的低振幅区段可作优先切分点
 SILENCE_DBFS = -40.0       # 低于此 RMS 电平视为静音
 POLL_INTERVAL = 5
 POLL_MAX = 480  # 40 分钟封顶（实测 3h 音频约 6.5 分钟）
@@ -310,12 +314,11 @@ def main() -> None:
     ap.add_argument("video", help="视频或音频文件路径")
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--keep-audio", action="store_true", help="保留提取的 16k 单声道 mp3")
+    ap.add_argument("--from-raw", metavar="QWEN_RAW_JSON", default=None,
+                    help="离线重拆模式：跳过在线识别，从已有的 qwen_raw.json 重新分段（调拆分参数用，不花钱）")
     args = ap.parse_args()
 
-    if "DASHSCOPE_API_KEY" not in os.environ:
-        sys.exit("缺少环境变量 DASHSCOPE_API_KEY")
     os.makedirs(args.output_dir, exist_ok=True)
-
     t0 = time.time()
     tmpdir = tempfile.mkdtemp(prefix="qwen_asr_")
     audio_path = os.path.join(tmpdir, "audio.mp3")
@@ -324,20 +327,27 @@ def main() -> None:
         print("提取音轨…")
         extract_audio(args.video, audio_path)
 
-        server, port = start_server(tmpdir)
-        tunnel, public_url = start_tunnel(port)
-        file_url = f"{public_url}/audio.mp3"
-        print(f"隧道就绪: {file_url}")
-
-        result = transcribe(file_url)
-
         print("计算静音段（拆分切点用）…")
         silences = compute_silences(audio_path)
         print(f"检测到 >={MIN_SILENCE_SECONDS:g}s 静音段 {len(silences)} 处")
 
-        raw_path = os.path.join(args.output_dir, "qwen_raw.json")
-        with open(raw_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        if args.from_raw:
+            with open(args.from_raw, encoding="utf-8") as f:
+                result = json.load(f)
+            print(f"离线模式：从 {args.from_raw} 重拆（不调 API）")
+        else:
+            if "DASHSCOPE_API_KEY" not in os.environ:
+                sys.exit("缺少环境变量 DASHSCOPE_API_KEY")
+            server, port = start_server(tmpdir)
+            tunnel, public_url = start_tunnel(port)
+            file_url = f"{public_url}/audio.mp3"
+            print(f"隧道就绪: {file_url}")
+
+            result = transcribe(file_url)
+
+            raw_path = os.path.join(args.output_dir, "qwen_raw.json")
+            with open(raw_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
     finally:
         if tunnel:
             tunnel.kill()
@@ -369,7 +379,8 @@ def main() -> None:
     print(f"  {srt_path}")
     print(f"  {json_path}")
     print(f"  {meta_path}")
-    print(f"  {os.path.join(args.output_dir, 'qwen_raw.json')}")
+    if not args.from_raw:
+        print(f"  {os.path.join(args.output_dir, 'qwen_raw.json')}")
 
 
 if __name__ == "__main__":
