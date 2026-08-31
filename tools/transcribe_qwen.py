@@ -181,61 +181,67 @@ def join_words(chunk: list) -> str:
     return out
 
 
-def split_long_sentence(sent: dict, silences: list) -> list:
-    """把 >12s 的句子按词边界机械拆分。
+def split_sentence(sent: dict, silences: list) -> list:
+    """把句子切成字幕条目：
 
-    切点优先级：窗口内最后一个 >=2s 静音段（振幅验证过的真实空白）里的词边界 >
-    窗口内最大词间停顿。返回句子列表（结构与输入一致）。
+    1. 句内 >=1s 的静音段（振幅验证过的真实空白）一律断开——字幕跟随语音节奏；
+    2. 仍 >12s 的片段在最大词间停顿处再拆（兜底，保证无超长条）。
+
+    所有切点都落在词边界上，不做时间插值。返回句子列表（结构与输入一致）。
     """
     words = sent.get("words", [])
     if not words:
         return [sent]
 
-    # 校验：词流拼回（去标点空白）须等于句文本，否则不动它（宁留长条，不改文本）
+    # 校验：词流拼回（去标点空白）须等于句文本，否则不动它（宁留原样，不改文本）
     joined = "".join(word_text(w) for w in words)
     if normalize(joined) != normalize(sent["text"]):
-        print(f"  警告: 句 {sent.get('sentence_id')} 词流与句文本不一致，保留 {round((sent['end_time']-sent['begin_time'])/1000,1)}s 长条")
+        print(f"  警告: 句 {sent.get('sentence_id')} 词流与句文本不一致，保留 {round((sent['end_time']-sent['begin_time'])/1000,1)}s 原样")
         return [sent]
 
-    def pick_cut(cur: list) -> int:
-        """在 cur 里选切点（返回后半段的起始下标）。"""
-        win_start, win_end = cur[0]["begin_time"] / 1000, cur[-1]["end_time"] / 1000
-        # 与窗口有交集的静音段，取最靠后的
-        hits = [(s, e) for s, e in silences if e > win_start and s < win_end]
-        if hits:
-            s, e = hits[-1]
-            # 切在静音段起点之前的最后一个词之后（词不落进静音区）
-            for i in range(len(cur) - 1, -1, -1):
-                if cur[i]["end_time"] / 1000 <= s:
-                    if i + 1 < len(cur):
-                        return i + 1
-                    break
-        gaps = [cur[i + 1]["begin_time"] - cur[i]["end_time"] for i in range(len(cur) - 1)]
-        return gaps.index(max(gaps)) + 1 if gaps else len(cur)
+    s_begin, s_end = sent["begin_time"] / 1000, sent["end_time"] / 1000
 
-    chunks, cur = [], [words[0]]
-    for w in words[1:]:
-        if (w["end_time"] - cur[0]["begin_time"]) / 1000 > MAX_ENTRY_SECONDS:
-            cut = pick_cut(cur)
-            if cut == len(cur):  # 无更好切点，就在边界切
-                chunks.append(cur)
-                cur = [w]
-            else:
-                chunks.append(cur[:cut])
-                cur = cur[cut:] + [w]
-        else:
-            cur.append(w)
-    chunks.append(cur)
+    # 规则 1：句内静音段 → 切点（后半段第一个词的下标）
+    # 条件：静音段落在一对相邻词的间隔内（前词结束不晚于静音尾，后词开始不早于静音头）。
+    # 注意词级时间戳比实际振幅衰减略宽，不能用「前词必须结束于静音头之前」这种严格条件。
+    cut_idx = set()
+    for sil_s, sil_e in silences:
+        if sil_e <= s_begin or sil_s >= s_end:
+            continue
+        i = next((i for i, w in enumerate(words) if w["begin_time"] / 1000 >= sil_e), None)
+        if i and i > 0 and words[i - 1]["end_time"] / 1000 <= sil_e:
+            cut_idx.add(i)
 
-    out = []
-    for chunk in chunks:
-        out.append({
+    # 规则 2：>12s 兜底——在最大词间停顿处递归再拆
+    def enforce_max(chunk: list) -> list:
+        if (chunk[-1]["end_time"] - chunk[0]["begin_time"]) / 1000 <= MAX_ENTRY_SECONDS:
+            return [chunk]
+        gaps = [chunk[i + 1]["begin_time"] - chunk[i]["end_time"] for i in range(len(chunk) - 1)]
+        cut = gaps.index(max(gaps)) + 1 if gaps else len(chunk)
+        if cut >= len(chunk):
+            return [chunk]  # 单词就超长，放弃拆它
+        return enforce_max(chunk[:cut]) + enforce_max(chunk[cut:])
+
+    chunks, cur = [], []
+    for i, w in enumerate(words):
+        if i in cut_idx and cur:
+            chunks.extend(enforce_max(cur))
+            cur = []
+        cur.append(w)
+    if cur:
+        chunks.extend(enforce_max(cur))
+
+    if len(chunks) <= 1:
+        return [sent]
+    return [
+        {
             "begin_time": chunk[0]["begin_time"],
             "end_time": chunk[-1]["end_time"],
             "text": join_words(chunk),
             "words": chunk,
-        })
-    return out
+        }
+        for chunk in chunks
+    ]
 
 
 def to_segments(result: dict, silences: list) -> tuple:
@@ -245,15 +251,14 @@ def to_segments(result: dict, silences: list) -> tuple:
         sentences.extend(tr.get("sentences", []))
     sentences.sort(key=lambda s: s["begin_time"])
 
-    split_sents, n_long = [], 0
+    split_sents, n_split = [], 0
     for s in sentences:
-        if (s["end_time"] - s["begin_time"]) / 1000 > MAX_ENTRY_SECONDS:
-            n_long += 1
-            split_sents.extend(split_long_sentence(s, silences))
-        else:
-            split_sents.append(s)
-    if n_long:
-        print(f"超长条机械拆分: {n_long} 条")
+        parts = split_sentence(s, silences)
+        if len(parts) > 1:
+            n_split += 1
+        split_sents.extend(parts)
+    if n_split:
+        print(f"静音/超长拆分: {n_split} 句被拆 → 共 {len(split_sents)} 条")
 
     segments = []
     for i, s in enumerate(split_sents, 1):

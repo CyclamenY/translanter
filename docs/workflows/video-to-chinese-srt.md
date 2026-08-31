@@ -60,7 +60,7 @@ venv/Scripts/python tools/transcribe_qwen.py <视频文件> --output-dir out/<�
 要点：
 
 - 模型 `qwen-audio-3.0-asr-flash-filetrans`，异步任务制；实测三语种整句率 100%，原生整句分段，**无需再走断句重组**。
-- 产出 `source.srt`（整句字幕，>12s 条目已按词级时间戳在最大停顿处机械拆分）与 `source.json`（whisper-ctranslate2 `--pretty_json` 兼容的词级时间戳结构）。
+- 产出 `source.srt`（句内 ≥1s 静音处一律断条，字幕跟随语音节奏；仍 >12s 的片段按最大词间停顿机械拆完）与 `source.json`（whisper-ctranslate2 `--pretty_json` 兼容的词级时间戳结构）。
 - 语种自动检测即可（中/英/日实测均正确）；无需 `--language`。
 - 音频走公网 URL：脚本自动提取 16k 单声道音轨 → 本机起临时 HTTP 服务 → cloudflared 隧道中转（`--protocol http2`，与 TUN 代理共存；前提是把 `cloudflared.exe` 加入代理的进程直连规则，实测直连规则生效后隧道正常）。
 - 限制：单文件 ≤12 小时 / 2GB（实测 3 小时视频云端约 6.5 分钟，¥2.4）；按时长计费 ¥0.79/小时。
@@ -79,7 +79,7 @@ Agent(subagent_type="subtitle-translator",
   `cd tools/llm-subtrans && ../../venv/Scripts/python scripts/deepseek-subtrans.py -l Chinese --project --postprocess -o <输出> <输入>`
 - 主会话校验：条目数与时间轴和 source.srt 逐条相等。
 - 合并双语 SRT（原文上、译文下，共享时间轴）为 `bilingual.srt`，供步骤 3。
-- 注意：转写产物中被机械拆开的条目是句中片段（不以句末标点收尾），翻译时按上下文连贯处理即可。
+- 注意：静音断条后部分条目是句中片段（不以句末标点收尾）；翻译时按上下文连贯处理即可（翻译 agent 整文件读入，理解不受断条影响）。
 
 ## 步骤 3：AI 校验（两轮封顶）
 
