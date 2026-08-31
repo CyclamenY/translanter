@@ -206,15 +206,17 @@ def split_sentence(sent: dict, silences: list) -> list:
     s_begin, s_end = sent["begin_time"] / 1000, sent["end_time"] / 1000
 
     # 规则 1：句内静音段 → 切点（后半段第一个词的下标）
-    # 条件：静音段落在一对相邻词的间隔内（前词结束不晚于静音尾，后词开始不早于静音头）。
-    # 注意词级时间戳比实际振幅衰减略宽，不能用「前词必须结束于静音头之前」这种严格条件。
+    # 判定：静音中心落在某对相邻词的间隔内即切。不用「词开始 >= 静音尾」这类绝对条件——
+    # 静音边界有 100ms 窗口量化误差，词级时间戳也比实际振幅宽，绝对条件会在边界情形漏切。
     cut_idx = set()
     for sil_s, sil_e in silences:
         if sil_e <= s_begin or sil_s >= s_end:
             continue
-        i = next((i for i, w in enumerate(words) if w["begin_time"] / 1000 >= sil_e), None)
-        if i and i > 0 and words[i - 1]["end_time"] / 1000 <= sil_e:
-            cut_idx.add(i)
+        center = (sil_s + sil_e) / 2
+        for i in range(1, len(words)):
+            if words[i - 1]["end_time"] / 1000 <= center <= words[i]["begin_time"] / 1000:
+                cut_idx.add(i)
+                break
 
     # 规则 2：>12s 兜底——在最大词间停顿处递归再拆
     def enforce_max(chunk: list) -> list:
