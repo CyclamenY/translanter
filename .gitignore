@@ -43,3 +43,6 @@ tools/llm-subtrans/
 # Transcription/translation outputs
 out/
 out-*/
+
+# cloudflared tunnel binary
+tools/cloudflared.exe
