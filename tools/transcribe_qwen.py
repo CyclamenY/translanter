@@ -133,8 +133,20 @@ def normalize(text: str) -> str:
     return re.sub(r"[\s，。、！？,.!?…・「」『』\"''()（）—\-]+", "", text).lower()
 
 
-def word_text(word: dict, lang_has_spaces: bool) -> str:
+def word_text(word: dict) -> str:
     return word["text"] + word.get("punctuation", "")
+
+
+def join_words(chunk: list) -> str:
+    """词流重建文本：仅相邻两个拉丁词之间补空格，其余直接相连；标点贴回前词。"""
+    parts = [word_text(w) for w in chunk]
+    out = parts[0]
+    for prev, cur in zip(parts, parts[1:]):
+        if re.search(r"[A-Za-z0-9]$", prev) and re.match(r"^[A-Za-z0-9]", cur):
+            out += " " + cur
+        else:
+            out += cur
+    return out
 
 
 def split_long_sentence(sent: dict) -> list:
@@ -144,7 +156,7 @@ def split_long_sentence(sent: dict) -> list:
         return [sent]
 
     # 校验：词流拼回（去标点空白）须等于句文本，否则不动它（宁留长条，不改文本）
-    joined = "".join(word_text(w, False) for w in words)
+    joined = "".join(word_text(w) for w in words)
     if normalize(joined) != normalize(sent["text"]):
         print(f"  警告: 句 {sent.get('sentence_id')} 词流与句文本不一致，保留 {round((sent['end_time']-sent['begin_time'])/1000,1)}s 长条")
         return [sent]
@@ -167,15 +179,10 @@ def split_long_sentence(sent: dict) -> list:
 
     out = []
     for chunk in chunks:
-        text = "".join(word_text(w, False) for w in chunk)
-        # 英文等语言词间补空格
-        if re.search(r"[A-Za-z]", text):
-            text = " ".join(word_text(w, True) for w in chunk)
-            text = re.sub(r"\s+([,.!?…])", r"\1", text)  # 标点贴回前词
         out.append({
             "begin_time": chunk[0]["begin_time"],
             "end_time": chunk[-1]["end_time"],
-            "text": text,
+            "text": join_words(chunk),
             "words": chunk,
         })
     return out
@@ -268,6 +275,10 @@ def main() -> None:
         print(f"隧道就绪: {file_url}")
 
         result = transcribe(file_url)
+
+        raw_path = os.path.join(args.output_dir, "qwen_raw.json")
+        with open(raw_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
     finally:
         if tunnel:
             tunnel.kill()
@@ -297,6 +308,7 @@ def main() -> None:
     print(f"  {srt_path}")
     print(f"  {json_path}")
     print(f"  {meta_path}")
+    print(f"  {os.path.join(args.output_dir, 'qwen_raw.json')}")
 
 
 if __name__ == "__main__":
