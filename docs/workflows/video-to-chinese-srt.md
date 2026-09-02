@@ -61,7 +61,7 @@ venv/Scripts/python tools/transcribe_qwen.py <视频文件> --output-dir out/<�
 
 - 模型 `qwen-audio-3.0-asr-flash-filetrans`，异步任务制；实测三语种整句率 100%，原生整句分段，**无需再走断句重组**。
 - 产出 `source.srt`（句内 ≥1s 静音处一律断条，字幕跟随语音节奏；仍 >12s 的片段按最大词间停顿机械拆完）与 `source.json`（whisper-ctranslate2 `--pretty_json` 兼容的词级时间戳结构）。
-- 语种自动检测即可（中/英/日实测均正确）；无需 `--language`。
+- 语种可自动检测（中/英/日实测均正确）；已知语种时建议显式传 `--language ja`（`language_hints`，最多 4 个代码，支持 zh/en/ja/ko 等 30 种，见 `--help`），可降低整句被误识别为其他语言的概率。
 - 音频走公网 URL：脚本自动提取 16k 单声道音轨 → 本机起临时 HTTP 服务 → cloudflared 隧道中转（`--protocol http2`，与 TUN 代理共存；前提是把 `cloudflared.exe` 加入代理的进程直连规则，实测直连规则生效后隧道正常）。
 - 限制：单文件 ≤12 小时 / 2GB（实测 3 小时视频云端约 6.5 分钟，¥2.4）；按时长计费 ¥0.79/小时。
 - 已知特性：在线 ASR 有轻微运行间不确定性（同音频两次提交个别字词差异 <0.2%）。

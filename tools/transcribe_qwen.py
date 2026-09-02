@@ -6,6 +6,8 @@
 用法:
   set DASHSCOPE_API_KEY=...  （或 User 级环境变量）
   venv/Scripts/python tools/transcribe_qwen.py <视频/音频文件> --output-dir out/<视频名>
+  # 已知语种时建议显式指定（提高专名/混说场景准确率），最多 4 个：
+  venv/Scripts/python tools/transcribe_qwen.py <视频文件> --output-dir out/<视频名> --language ja
 
 离线重拆（调拆分参数时用，不调 API、不花钱）:
   venv/Scripts/python tools/transcribe_qwen.py <视频文件> --output-dir out/<视频名> \
@@ -43,6 +45,13 @@ MIN_SILENCE_SECONDS = 0.8  # 持续这么久的低振幅区段可作优先切分
 SILENCE_DBFS = -40.0       # 低于此 RMS 电平视为静音
 POLL_INTERVAL = 5
 POLL_MAX = 480  # 40 分钟封顶（实测 3h 音频约 6.5 分钟）
+
+# language_hints 支持的语种代码（官方文档），最多 4 个
+SUPPORTED_LANGUAGES = {
+    "zh", "en", "ja", "ko", "vi", "th", "id", "ms", "tl", "hi",
+    "ar", "fr", "de", "es", "pt", "ru", "it", "nl", "sv", "da",
+    "fi", "no", "el", "pl", "cs", "hu", "ro", "bg", "hr", "sk",
+}
 
 
 # ---------- 基础设施 ----------
@@ -98,11 +107,14 @@ def auth() -> dict:
     return {"Authorization": f"Bearer {os.environ['DASHSCOPE_API_KEY']}"}
 
 
-def transcribe(file_url: str) -> dict:
+def transcribe(file_url: str, language_hints: list = None) -> dict:
+    parameters = {"channel_id": [0]}
+    if language_hints:
+        parameters["language_hints"] = language_hints
     resp = requests.post(
         SUBMIT_URL,
         headers={**auth(), "Content-Type": "application/json", "X-DashScope-Async": "enable"},
-        json={"model": MODEL, "input": {"file_urls": [file_url]}, "parameters": {"channel_id": [0]}},
+        json={"model": MODEL, "input": {"file_urls": [file_url]}, "parameters": parameters},
         timeout=60,
     )
     resp.raise_for_status()
@@ -318,7 +330,22 @@ def main() -> None:
     ap.add_argument("--keep-audio", action="store_true", help="保留提取的 16k 单声道 mp3")
     ap.add_argument("--from-raw", metavar="QWEN_RAW_JSON", default=None,
                     help="离线重拆模式：跳过在线识别，从已有的 qwen_raw.json 重新分段（调拆分参数用，不花钱）")
+    ap.add_argument("--language", metavar="CODES", default=None,
+                    help="语种提示，逗号分隔，最多 4 个（如 ja 或 zh,en）。不设置则自动识别。"
+                         "支持: " + " ".join(sorted(SUPPORTED_LANGUAGES)))
     args = ap.parse_args()
+
+    language_hints = None
+    if args.language:
+        language_hints = [c.strip().lower() for c in args.language.split(",") if c.strip()]
+        bad = [c for c in language_hints if c not in SUPPORTED_LANGUAGES]
+        if bad:
+            sys.exit(f"不支持的语种代码: {bad}（支持: {' '.join(sorted(SUPPORTED_LANGUAGES))}）")
+        if len(language_hints) > 4:
+            print(f"警告：language_hints 最多 4 个，{language_hints[4:]} 被截断")
+            language_hints = language_hints[:4]
+        if args.from_raw:
+            print("警告：离线重拆模式不调 API，--language 不生效")
 
     os.makedirs(args.output_dir, exist_ok=True)
     t0 = time.time()
@@ -345,7 +372,7 @@ def main() -> None:
             file_url = f"{public_url}/audio.mp3"
             print(f"隧道就绪: {file_url}")
 
-            result = transcribe(file_url)
+            result = transcribe(file_url, language_hints)
 
             raw_path = os.path.join(args.output_dir, "qwen_raw.json")
             with open(raw_path, "w", encoding="utf-8") as f:
@@ -367,7 +394,8 @@ def main() -> None:
                   f, ensure_ascii=False, indent=1)
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump({"engine": f"dashscope/{MODEL}", "source": args.video,
-                   "max_entry_seconds": MAX_ENTRY_SECONDS}, f, ensure_ascii=False, indent=1)
+                   "max_entry_seconds": MAX_ENTRY_SECONDS,
+                   "language_hints": language_hints}, f, ensure_ascii=False, indent=1)
 
     if args.keep_audio:
         keep = os.path.join(args.output_dir, "audio.mp3")
